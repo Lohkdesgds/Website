@@ -45,7 +45,7 @@ int main(int argc, char* argv[])
 	svr.set_error_handler([](const httplib::Request& req, httplib::Response& res) {
 		std::cout << "[ERR] " << req.remote_addr << ":" << req.remote_port << " # " << res.status << std::endl;
 
-		const std::string possurl = "/" + std::to_string(res.status) + ".html";
+		const std::string possurl = "/error/" + std::to_string(res.status) + ".html";
 		const std::string possibl = root_path_public + possurl;
 
 		if (httplib::detail::is_file(possibl)) {
@@ -63,7 +63,7 @@ int main(int argc, char* argv[])
 	svr.set_exception_handler([](const httplib::Request& req, httplib::Response& res, std::exception_ptr ep) {
 		std::cout << "[EXC] " << req.remote_addr << ":" << req.remote_port << " # " << res.status << std::endl;
 
-		const std::string possurl = "/" + std::to_string(res.status) + ".html";
+		const std::string possurl = "/error/" + std::to_string(res.status) + ".html";
 		const std::string possibl = root_path_public + possurl;
 
 		if (httplib::detail::is_file(possibl)) {
