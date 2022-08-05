@@ -106,13 +106,14 @@ int main(int argc, char* argv[])
 			v6f = setup(sv6, port_used, true);
 			if (v6f.wait_for(std::chrono::seconds(0)) == std::future_status::ready) return false;
 		}
+		return true;
 	};
 
 	auto_setup();
 	std::cout << "Hosting.\n";
 
 	while (1) { // waits forever.
-		if (v4f.wait_for(std::chrono::seconds(10)) == std::future_status::ready) {
+		if (enable_ipv4 && (v4f.wait_for(std::chrono::seconds(10)) == std::future_status::ready)) {
 			if (!v4f.get()) {
 				while (!auto_setup(1)) {
 					std::cout << "Trying again in 5 seconds.\n";
@@ -120,7 +121,7 @@ int main(int argc, char* argv[])
 				}
 			}
 		}
-		if (v6f.wait_for(std::chrono::seconds(10)) == std::future_status::ready) {
+		if (enable_ipv6 && (v6f.wait_for(std::chrono::seconds(10)) == std::future_status::ready)) {
 			if (!v6f.get()) {
 				while (!auto_setup(2)) {
 					std::cout << "Trying again in 5 seconds.\n";
