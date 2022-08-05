@@ -37,14 +37,14 @@ void CookieConf::merge_into(httplib::Response& res) const
 {
 	if (name.empty() || value.empty()) return;
 	std::string cookie = name + std::string("=") + value; // already encoded url
-	if (time_del_sec != 0) cookie += "; Max-Age=" + std::to_string(time_del_sec > 0 ? time_del_sec : 0) + "; Secure; HttpOnly";
+	if (time_del_sec != 0) cookie += "; Max-Age=" + std::to_string(time_del_sec > 0 ? time_del_sec : 0) + "";
 	res.set_header("Set-Cookie", cookie);
 }
 
 void CookieConf::remove_from(httplib::Response& res) const
 {
 	if (name.empty() || value.empty()) return;
-	std::string cookie = name + std::string("=") + value + "; Max-Age=0; Secure; HttpOnly";
+	std::string cookie = name + std::string("=") + value + "; Max-Age=0";
 	res.set_header("Set-Cookie", cookie);
 }
 
@@ -177,13 +177,13 @@ int add_ext(X509* cert, int nid, char* value)
 
 static void callback(int p, int n, void* arg)
 {
-	char c = 'B';
-
-	if (p == 0) c = '.';
-	if (p == 1) c = '+';
-	if (p == 2) c = '*';
-	if (p == 3) c = '\n';
-	fputc(c, stderr);
+	//char c = 'B';
+	//
+	//if (p == 0) c = '.';
+	//if (p == 1) c = '+';
+	//if (p == 2) c = '*';
+	//if (p == 3) c = '\n';
+	//fputc(c, stderr);
 }
 
 int mkcert(X509** x509p, EVP_PKEY** pkeyp, int bits, int serial, int days)

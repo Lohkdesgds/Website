@@ -36,7 +36,7 @@ add_subdirectory(deps/json)
 add_executable(${PROJECT_NAME} 
 	"src/main.cpp"
 	"src/tools.cpp"
-)
+	"src/handlers.cpp")
 
 target_link_libraries(${PROJECT_NAME} ${OPENSSL_LIBRARIES})
 

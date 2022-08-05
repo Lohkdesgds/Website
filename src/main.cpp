@@ -2,24 +2,21 @@
 #include <iostream>
 #include <httplib.h>
 #include <filesystem>
+#include <thread>
+#include <future>
 #include <nlohmann/json.hpp>
 #include "tools.h"
+#include "handlers.h"
 
-const std::string root_path_public = "./public_host";
-const std::string page_not_found = "/error/404.html";
-const std::string page_auth_failed = "/error/auth_failure.html";
-const std::string page_host_failed = "/error/host_failure.html";
 
-//const std::string token_cookie = "token";
-const std::string token_file = "token.json";
-const long long token_cookie_timeout = 28800; // 8 hours
-const int port = 8080;
+std::future<bool> setup(httplib::Server* svr, const int port_used, const bool ipv6);
 
 int main(int argc, char* argv[])
 {
 	std::cout << "Loading stuff...\n";
 	int port_used = port;
 	bool ssl = false;
+	bool enable_ipv4 = false, enable_ipv6 = false;
 
 	if (argc > 1)
 	{
@@ -28,6 +25,14 @@ int main(int argc, char* argv[])
 			if (strcmp(argv[aa], "-ssl") == 0) {
 				ssl = true;
 				std::cout << "(arg) SSL enabled.\n";
+			}
+			else if (strcmp(argv[aa], "-ipv4") == 0) {
+				enable_ipv4 = true;
+				std::cout << "(arg) IPV4 enabled.\n";
+			}
+			else if (strcmp(argv[aa], "-ipv6") == 0) {
+				enable_ipv6 = true;
+				std::cout << "(arg) IPV6 selected.\n";
 			}
 			else if (strcmp(argv[aa], "-port") == 0) {
 				if (aa + 1 >= argc) {
@@ -49,162 +54,111 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	if (!enable_ipv4 && !enable_ipv6) {
+		enable_ipv4 = enable_ipv6 = true;
+		std::cout << "By default, IPV4 and IPV6 are enabled. Use -ipv4 and/or -ipv6 to be explicit on what to enable (or both).\n";
+	}
+
 	X509* xxx = nullptr;
 	EVP_PKEY* ppp = nullptr;
 
-	httplib::Server* svr = nullptr;
-	
+	httplib::Server* sv4 = nullptr;
+	httplib::Server* sv6 = nullptr;
+	std::future<bool> v4f, v6f;
+
 	if (ssl) {
 		mkcert(&xxx, &ppp, 2048, 0, 365);
-		svr = (httplib::Server*)new httplib::SSLServer(xxx, ppp);
 	}
-	else {
-		svr = new httplib::Server();
+
+	const auto reset = [&] {
+		httplib::Server* ptr = nullptr;
+		if (ssl) {
+			ptr = (httplib::Server*)new httplib::SSLServer(xxx, ppp);
+		}
+		else {
+			ptr = new httplib::Server();
+		}
+		return ptr;
+	};
+
+	const auto auto_setup = [&](const int select = 0) {
+		if (enable_ipv4 && (select == 0 || select == 1)) {
+			if (sv4) {
+				std::cout << "Stopping IPV4...\n";
+				sv4->stop();
+				delete sv4;
+			}
+			std::cout << "Setting up IPV4...\n";
+			sv4 = reset();
+			if (!sv4 || !sv4->is_valid()) return false;
+			v4f = setup(sv4, port_used, false);
+			if (v4f.wait_for(std::chrono::seconds(0)) == std::future_status::ready) return false;
+		}
+		if (enable_ipv6 && (select == 0 || select == 2)) {
+			if (sv6) {
+				std::cout << "Stopping IPV6...\n";
+				sv6->stop();
+				delete sv6;
+			}
+			std::cout << "Setting up IPV6...\n";
+			sv6 = reset();
+			if (!sv6 || !sv6->is_valid()) return false;
+			v6f = setup(sv6, port_used, true);
+			if (v6f.wait_for(std::chrono::seconds(0)) == std::future_status::ready) return false;
+		}
+	};
+
+	auto_setup();
+	std::cout << "Hosting.\n";
+
+	while (1) { // waits forever.
+		if (v4f.wait_for(std::chrono::seconds(10)) == std::future_status::ready) {
+			if (!v4f.get()) {
+				while (!auto_setup(1)) {
+					std::cout << "Trying again in 5 seconds.\n";
+					std::this_thread::sleep_for(std::chrono::seconds(5));
+				}
+			}
+		}
+		if (v6f.wait_for(std::chrono::seconds(10)) == std::future_status::ready) {
+			if (!v6f.get()) {
+				while (!auto_setup(2)) {
+					std::cout << "Trying again in 5 seconds.\n";
+					std::this_thread::sleep_for(std::chrono::seconds(5));
+				}
+			}
+		}
 	}
+
+	return 0;
+}
+
+std::future<bool> setup(httplib::Server* svr, const int port_used, const bool ipv6)
+{
+	const auto make_sync_future = [](const bool good) { std::promise<bool> p; auto f = p.get_future(); p.set_value(good); return f; };
 
 	if (!svr->is_valid()) {
 		std::cout << "The server is invalid, sorry.\n";
-		return 0;
+		return make_sync_future(false);
 	}
 
 	if (!svr->set_mount_point("/", root_path_public))
 	{
 		std::cout << "Please create path /public_host to mount the server properly.\n";
-		system("dir");
-		return 1;
+		return make_sync_future(false);
 	}
 
 	svr->set_keep_alive_max_count(10);
+	svr->set_post_routing_handler(post_routing_handler);
+	svr->set_error_handler(error_handler);
+	svr->set_exception_handler(exception_handler);
+	svr->set_logger(static_logger);
+	svr->set_pre_routing_handler(pre_router_handler);
+	svr->set_file_request_handler(file_request_handler);
 
-	svr->set_post_routing_handler([](const httplib::Request& req, httplib::Response& res) {
-		find_and_replace_all(res.body);
+	std::cout << "Hosting " << (ipv6 ? "IPV6" : "IPV4") << " @ port = " << port_used << "\n";
+
+	return std::async(std::launch::async, [svr, ipv6, port_used] {
+		return svr->listen(ipv6 ? "::1" : "0.0.0.0", port_used);
 	});
-
-	svr->set_error_handler([](const httplib::Request& req, httplib::Response& res) {
-		std::cout << "[ERR] " << req.remote_addr << ":" << req.remote_port << " # " << res.status << std::endl;
-
-		const std::string possurl = "/error/" + std::to_string(res.status) + ".html";
-		const std::string possibl = root_path_public + possurl;
-
-		if (httplib::detail::is_file(possibl)) {
-			std::cout << "[ERR] " << req.remote_addr << ":" << req.remote_port << " <- " << possurl << std::endl;
-			res.set_redirect(possurl);
-		}
-		else {
-			auto fmt = "<p>Internal error! HTTP error code: <span style='color:red;'>%d</span></p>";
-			char buf[BUFSIZ];
-			snprintf(buf, sizeof(buf), fmt, res.status);
-			res.set_content(buf, "text/html");
-		}
-	});
-
-	svr->set_exception_handler([](const httplib::Request& req, httplib::Response& res, std::exception_ptr ep) {
-		std::cout << "[EXC] " << req.remote_addr << ":" << req.remote_port << " # " << res.status << std::endl;
-
-		const std::string possurl = "/error/" + std::to_string(res.status) + ".html";
-		const std::string possibl = root_path_public + possurl;
-
-		if (httplib::detail::is_file(possibl)) {
-			res.set_redirect(possurl);
-		}
-		else {
-			std::string fin = "<p>Internal error! HTTP error code: <span style='color:red;'>500</span></p><br><p>Detailed: ";
-
-			try {
-				std::rethrow_exception(ep);
-			}
-			catch (const std::exception& e) {
-				const auto* wh = e.what();
-				for (size_t p = 0; p < 96 && wh && wh[p] != '\0'; ++p) fin += (char)wh[p];
-			}
-			catch (...) { // See the following NOTE
-				fin += "Unknown Exception";
-			}
-
-			fin += "</p>";
-			res.set_content(fin.c_str(), "text/html");
-		}
-		res.status = 500;
-	});
-
-	svr->set_logger([](const httplib::Request& req, const httplib::Response& res) {
-		std::cout << "[LOG] " << req.remote_addr << ":" << req.remote_port << " => " << req.path << std::endl;
-		if (const auto _str = res.get_header_value("Location"); !_str.empty()) std::cout << "[LOG] " << req.remote_addr << ":" << req.remote_port << " <- " << _str << std::endl;
-	});
-
-	svr->set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
-		
-		if (req.path.back() == '/') {
-			res.set_redirect(req.path + "index.html");
-			return httplib::Server::HandlerResponse::Handled;
-		}
-		else if (req.path.empty()) {
-			res.set_redirect("/index.html");
-			return httplib::Server::HandlerResponse::Handled;
-		}
-		else if (httplib::detail::is_dir(root_path_public + req.path)) {
-			res.set_redirect(req.path + "/index.html");
-			return httplib::Server::HandlerResponse::Handled;
-		}
-
-		return httplib::Server::HandlerResponse::Unhandled;
-	});
-
-	svr->set_file_request_handler([](const httplib::Request& req, httplib::Response& res) {
-		const size_t rfin = req.path.rfind('/');
-		const std::string sb = (rfin != std::string::npos) ? req.path.substr(0, rfin) : "/";
-		const std::string fp = (rfin != std::string::npos) ? req.path.substr(rfin + 1) : "";
-
-
-		if (fp.find(token_file) == 0) {
-			res.set_redirect(page_not_found);
-			return;
-		}
-		if (fp.find("login.html") == 0) {
-			return;
-		}
-
-		const std::string expect_token = sb + "/" + token_file;
-		const std::string expect_login = sb + "/login.html";
-
-		CookieConf cookie(root_path_public + expect_token);
-
-		const bool page_has_token = httplib::detail::is_file(root_path_public + expect_token);
-		const bool page_has_login = httplib::detail::is_file(root_path_public + expect_login);
-
-		if (page_has_token) {
-
-			if (!cookie.exists()) // malformed token
-			{
-				cookie.remove_from(res);
-				res.set_redirect(page_host_failed);
-				return;
-			}
-			else if (!cookie.check_has(req)) { // not logged in. Has token.
-				if (page_has_login) {
-					cookie.remove_from(res);
-					const std::string redir = expect_login + "?redir=" + httplib::detail::encode_url(req.path);
-					res.set_redirect(redir);
-					return;
-				}
-				else { // no login page, so that's bad.
-					res.set_redirect(page_host_failed);
-					return;
-				}
-			}
-
-			cookie.merge_into(res);
-		}
-		else {
-			cookie.remove_from(res);
-		}
-	});
-
-	std::cout << "Hosting @ port = " << port_used << "\n";
-
-	if (!svr->listen("localhost", port_used)) {
-        std::cout << "Bad news, bind/listen failed.\n";
-    }
-
-	return 0;
 }
