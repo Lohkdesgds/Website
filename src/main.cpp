@@ -160,6 +160,6 @@ std::future<bool> setup(httplib::Server* svr, const int port_used, const bool ip
 	std::cout << "Hosting " << (ipv6 ? "IPV6" : "IPV4") << " @ port = " << port_used << "\n";
 
 	return std::async(std::launch::async, [svr, ipv6, port_used] {
-		return svr->listen(ipv6 ? "::1" : "0.0.0.0", port_used);
+		return svr->listen(ipv6 ? "0:0:0:0:0:0:0:0" : "0.0.0.0", port_used);
 	});
 }
