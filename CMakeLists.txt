@@ -3,6 +3,12 @@ cmake_minimum_required(VERSION 3.15)
 # Project name, version and description
 project(website VERSION 1.0 DESCRIPTION "A simple website")
 
+# OpenSSL stuff source: https://github.com/Kitware/CMake/blob/master/Modules/
+# Code used in this project: https://opensource.apple.com/source/OpenSSL/OpenSSL-22/openssl/demos/x509/mkcert.c
+# OpenSSL for Windows: https://slproweb.com/products/Win32OpenSSL.html (all default, x64)
+include(${CMAKE_CURRENT_SOURCE_DIR}/FindOpenSSL.txt)
+
+
 #option(DPP_BUILD_TEST OFF)
 #option(BUILD_SHARED_LIBS OFF)
 
@@ -31,6 +37,9 @@ add_executable(${PROJECT_NAME}
 	"src/main.cpp"
 	"src/tools.cpp"
 )
+
+target_link_libraries(${PROJECT_NAME} ${OPENSSL_LIBRARIES})
+
 #file(GLOB ${PROJECT_NAME} CONFIGURE_DEPENDS "*.h" "*.cpp")
 
 # Linking libraries
@@ -45,6 +54,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
    deps/cpp-httplib
    deps/json/include
    include
+   ${OPENSSL_INCLUDE_DIR}
 )
 
 # Set C++ version

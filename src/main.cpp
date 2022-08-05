@@ -1,3 +1,4 @@
+#define CPPHTTPLIB_OPENSSL_SUPPORT
 #include <iostream>
 #include <httplib.h>
 #include <filesystem>
@@ -12,37 +13,74 @@ const std::string page_host_failed = "/error/host_failure.html";
 //const std::string token_cookie = "token";
 const std::string token_file = "token.json";
 const long long token_cookie_timeout = 28800; // 8 hours
-const int port = 54354;
+const int port = 8080;
 
 int main(int argc, char* argv[])
 {
 	std::cout << "Loading stuff...\n";
 	int port_used = port;
+	bool ssl = false;
 
 	if (argc > 1)
 	{
-		port_used = std::atoi(argv[1]);
-		if (port_used < 0 || port_used > 65535) {
-			std::cout << "Argument " << argv[1] << " is not a valid number. Port not defined manually.\n";
-			port_used = port;
+		for (int aa = 1; aa < argc; ++aa)
+		{
+			if (strcmp(argv[aa], "-ssl") == 0) {
+				ssl = true;
+				std::cout << "(arg) SSL enabled.\n";
+			}
+			else if (strcmp(argv[aa], "-port") == 0) {
+				if (aa + 1 >= argc) {
+					std::cout << "(arg) Cannot read port number correctly. Do -port <number>\n";
+					return 1;
+				}
+				port_used = std::atoi(argv[aa + 1]);
+
+				if (port_used < 0 || port_used > 65535) {
+					std::cout << "(arg) Argument " << argv[aa + 1] << " is not a valid number for -port. Port reset.\n";
+					port_used = port;
+				}
+				else {
+					std::wcout << "(arg) Port " << port_used << " defined.\n";
+				}
+
+				++aa;
+			}
 		}
 	}
 
-	httplib::Server svr;
+	X509* xxx = nullptr;
+	EVP_PKEY* ppp = nullptr;
 
-	if (!svr.set_mount_point("/", root_path_public, httplib::Headers()))
+	httplib::Server* svr = nullptr;
+	
+	if (ssl) {
+		mkcert(&xxx, &ppp, 2048, 0, 365);
+		svr = (httplib::Server*)new httplib::SSLServer(xxx, ppp);
+	}
+	else {
+		svr = new httplib::Server();
+	}
+
+	if (!svr->is_valid()) {
+		std::cout << "The server is invalid, sorry.\n";
+		return 0;
+	}
+
+	if (!svr->set_mount_point("/", root_path_public))
 	{
 		std::cout << "Please create path /public_host to mount the server properly.\n";
+		system("dir");
 		return 1;
 	}
 
-	svr.set_keep_alive_max_count(10);
+	svr->set_keep_alive_max_count(10);
 
-	svr.set_post_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+	svr->set_post_routing_handler([](const httplib::Request& req, httplib::Response& res) {
 		find_and_replace_all(res.body);
 	});
 
-	svr.set_error_handler([](const httplib::Request& req, httplib::Response& res) {
+	svr->set_error_handler([](const httplib::Request& req, httplib::Response& res) {
 		std::cout << "[ERR] " << req.remote_addr << ":" << req.remote_port << " # " << res.status << std::endl;
 
 		const std::string possurl = "/error/" + std::to_string(res.status) + ".html";
@@ -60,7 +98,7 @@ int main(int argc, char* argv[])
 		}
 	});
 
-	svr.set_exception_handler([](const httplib::Request& req, httplib::Response& res, std::exception_ptr ep) {
+	svr->set_exception_handler([](const httplib::Request& req, httplib::Response& res, std::exception_ptr ep) {
 		std::cout << "[EXC] " << req.remote_addr << ":" << req.remote_port << " # " << res.status << std::endl;
 
 		const std::string possurl = "/error/" + std::to_string(res.status) + ".html";
@@ -89,12 +127,12 @@ int main(int argc, char* argv[])
 		res.status = 500;
 	});
 
-	svr.set_logger([](const httplib::Request& req, const httplib::Response& res) {
+	svr->set_logger([](const httplib::Request& req, const httplib::Response& res) {
 		std::cout << "[LOG] " << req.remote_addr << ":" << req.remote_port << " => " << req.path << std::endl;
 		if (const auto _str = res.get_header_value("Location"); !_str.empty()) std::cout << "[LOG] " << req.remote_addr << ":" << req.remote_port << " <- " << _str << std::endl;
 	});
 
-	svr.set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+	svr->set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
 		
 		if (req.path.back() == '/') {
 			res.set_redirect(req.path + "index.html");
@@ -112,7 +150,7 @@ int main(int argc, char* argv[])
 		return httplib::Server::HandlerResponse::Unhandled;
 	});
 
-	svr.set_file_request_handler([](const httplib::Request& req, httplib::Response& res) {
+	svr->set_file_request_handler([](const httplib::Request& req, httplib::Response& res) {
 		const size_t rfin = req.path.rfind('/');
 		const std::string sb = (rfin != std::string::npos) ? req.path.substr(0, rfin) : "/";
 		const std::string fp = (rfin != std::string::npos) ? req.path.substr(rfin + 1) : "";
@@ -164,9 +202,9 @@ int main(int argc, char* argv[])
 
 	std::cout << "Hosting @ port = " << port_used << "\n";
 
-	if (!svr.listen("0.0.0.0", port_used)) {
-            std::cout << "Bad news, bind/listen failed.\n";
-        }
+	if (!svr->listen("localhost", port_used)) {
+        std::cout << "Bad news, bind/listen failed.\n";
+    }
 
 	return 0;
 }

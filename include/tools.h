@@ -4,6 +4,10 @@
 #include <nlohmann/json.hpp>
 #include <time.h>
 
+#include <openssl/pem.h>
+#include <openssl/conf.h>
+#include <openssl/x509v3.h>
+
 const std::string opt_arr[] = {
 	"%date%", "%tm_sec%", "%tm_min%", "%tm_hour%", "%tm_mday%", "%tm_mon%", "%tm_year%", "%tm_wday%", "%tm_yday%", "%tm_isdst%"
 };
@@ -25,11 +29,6 @@ public:
 	bool exists() const;
 };
 
-// sec < 0 == delete
-//void set_cookie(httplib::Response& resp, const std::string& name, const std::string& val, const long long maxagesec = 0);
-//void del_cookie(httplib::Response& resp, const std::string& name);
-//std::string get_cookie(const httplib::Request& resp, const std::string& name);
-
 bool find_and_replace_all(std::string& body);
 
 #ifdef _WIN32
@@ -44,3 +43,5 @@ time_t t = time(0);\
 if (!GMTIM(&t, &tm)) {\
 	return onfail;\
 }
+
+int mkcert(X509** x509p, EVP_PKEY** pkeyp, int bits, int serial, int days);
