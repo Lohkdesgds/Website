@@ -14,7 +14,9 @@ const std::string page_host_failed = "/error/host_failure.html";
 
 //const std::string token_cookie = "token";
 const std::string token_file = "token.json";
+const std::string login_file = "login.html";
 const long long token_cookie_timeout = 28800; // 8 hours
+const size_t split_point = 1 << 14;
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 const int port = 553;
 #else

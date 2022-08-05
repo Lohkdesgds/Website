@@ -1,13 +1,80 @@
 #include "handlers.h"
 
-void static_logger(const httplib::Request& req, const httplib::Response& res) {
+void _internal_logger(const std::string& textl) {
 	static std::mutex mu;
 	std::lock_guard<std::mutex> l(mu);
-	std::cout << "[LOG] " << req.remote_addr << ":" << req.remote_port << " => " << req.path << std::endl;
-	if (const auto _str = res.get_header_value("Location"); !_str.empty()) std::cout << "[LOG] " << req.remote_addr << ":" << req.remote_port << " <- " << _str << std::endl;
+	MAKEDAY();
+	const char* _tmp = asctime(&tm);
+	std::string date = "unknown";
+	if (_tmp) {
+		date = _tmp;
+		for (auto& i : date) if (i == '\n') i = '\0';
+	}
+	std::cout << "[" << date << "] " << textl << std::endl;
+}
+
+void static_logger(const httplib::Request& req, const httplib::Response& res) {
+	_internal_logger("[LOG] " + req.remote_addr + ":" + std::to_string(req.remote_port) + " => rq: (" + req.path + ")");
 }
 
 void file_request_handler(const httplib::Request& req, httplib::Response& res) {
+	
+	static_logger(req, res);
+
+	const std::string filepath = root_path_public + req.path;
+
+	const auto send_file = [&filepath, &req, &res]() {
+		const auto type = httplib::detail::find_content_type(filepath, {});
+		std::string buf;
+
+		if (!type) {
+			res.status = 404;
+			error_handler(req, res);
+			return false;
+		}
+		//else { res.set_header("Content-Type", type); }
+
+		httplib::detail::read_file(filepath, buf);
+		const size_t datasiz = buf.size();
+
+		if (datasiz == 0) {
+			res.status = 404;
+			error_handler(req, res);
+			return false;
+		}
+
+		res.set_content_provider(datasiz, type,
+			[
+				ipref = req.remote_addr + ":" + std::to_string(req.remote_port), 
+				abuf = std::move(buf),
+				datasiz,
+				relpath = req.path
+			](size_t offset, size_t length, httplib::DataSink& sink) {
+				if (offset + length > datasiz) {
+					_internal_logger("[FATAL-ERROR] Failed sending '" + relpath + "'!");
+					return false;
+				}
+				sink.write(abuf.data() + offset, length);
+				if (log_full()) _internal_logger("[U/D] " + ipref + " <= dl: (" + relpath + " " + std::to_string(((length + offset) * 100) / datasiz) + "%)");
+				return true;
+			},
+			[
+				ipref = req.remote_addr + ":" + std::to_string(req.remote_port),
+				relpath = req.path
+			](bool succ) {
+				if (log_full()) _internal_logger("[U/D] " + ipref + " <= dl: (" + relpath + " " + (succ ? "100% OK" : "FAILED") + ")");
+			}
+		);
+
+		return true;
+	};
+
+	if (!httplib::detail::is_file(filepath)) {
+		res.status = 404;
+		error_handler(req, res);
+		return;
+	}
+
 	const size_t rfin = req.path.rfind('/');
 	const std::string sb = (rfin != std::string::npos) ? req.path.substr(0, rfin) : "/";
 	const std::string fp = (rfin != std::string::npos) ? req.path.substr(rfin + 1) : "";
@@ -18,11 +85,12 @@ void file_request_handler(const httplib::Request& req, httplib::Response& res) {
 		return;
 	}
 	if (fp.find("login.html") == 0) {
+		send_file();
 		return;
 	}
 
 	const std::string expect_token = sb + "/" + token_file;
-	const std::string expect_login = sb + "/login.html";
+	const std::string expect_login = sb + "/" + login_file;
 
 	CookieConf cookie(root_path_public + expect_token);
 
@@ -55,6 +123,8 @@ void file_request_handler(const httplib::Request& req, httplib::Response& res) {
 	else {
 		cookie.remove_from(res);
 	}
+
+	send_file();
 }
 
 httplib::Server::HandlerResponse pre_router_handler(const httplib::Request& req, httplib::Response& res) {
@@ -76,7 +146,7 @@ httplib::Server::HandlerResponse pre_router_handler(const httplib::Request& req,
 }
 
 void exception_handler(const httplib::Request& req, httplib::Response& res, std::exception_ptr ep) {
-	std::cout << "[EXC] " << req.remote_addr << ":" << req.remote_port << " # " << res.status << std::endl;
+	_internal_logger("[EXC] " + req.remote_addr + ":" + std::to_string(req.remote_port) + " # " +  std::to_string(res.status));
 
 	const std::string possurl = "/error/" + std::to_string(res.status) + ".html";
 	const std::string possibl = root_path_public + possurl;
@@ -105,13 +175,13 @@ void exception_handler(const httplib::Request& req, httplib::Response& res, std:
 }
 
 void error_handler(const httplib::Request& req, httplib::Response& res) {
-	std::cout << "[ERR] " << req.remote_addr << ":" << req.remote_port << " # " << res.status << std::endl;
+	_internal_logger("[ERR] " + req.remote_addr + ":" + std::to_string(req.remote_port) + " # " +  std::to_string(res.status));
 
 	const std::string possurl = "/error/" + std::to_string(res.status) + ".html";
 	const std::string possibl = root_path_public + possurl;
 
 	if (httplib::detail::is_file(possibl)) {
-		std::cout << "[ERR] " << req.remote_addr << ":" << req.remote_port << " <- " << possurl << std::endl;
+		_internal_logger("[ERR] " + req.remote_addr + ":" + std::to_string(req.remote_port) + " <- " + possurl);
 		res.set_redirect(possurl);
 	}
 	else {

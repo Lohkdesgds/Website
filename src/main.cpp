@@ -13,10 +13,11 @@ std::future<bool> setup(httplib::Server* svr, const int port_used, const bool ip
 
 int main(int argc, char* argv[])
 {
-	std::cout << "Loading stuff...\n";
+	std::cout << "Loading stuff... (built @ " << CURRDATE << ")\n";
 	int port_used = port;
 	bool ssl = false;
 	bool enable_ipv4 = false, enable_ipv6 = false;
+	bool log_verbose = false;
 
 	if (argc > 1)
 	{
@@ -26,9 +27,18 @@ int main(int argc, char* argv[])
 				ssl = true;
 				std::cout << "(arg) SSL enabled.\n";
 			}
+			else if (strcmp(argv[aa], "-help") == 0) {
+				enable_ipv4 = true;
+				std::cout << "Arguments:\n-ssl (enable ssl, experimental)\n-help (this, exist on print)\n-ipv4 (enable ipv4 host)\n-ipv6 (enable ipv6 host)\n-fulllog (show all things going on)\n-port <num> (set port)\n";
+				return 0;
+			}
 			else if (strcmp(argv[aa], "-ipv4") == 0) {
 				enable_ipv4 = true;
 				std::cout << "(arg) IPV4 enabled.\n";
+			}
+			else if (strcmp(argv[aa], "-fulllog") == 0) {
+				log_verbose = true;
+				std::cout << "(arg) Full log enabled.\n";
 			}
 			else if (strcmp(argv[aa], "-ipv6") == 0) {
 				enable_ipv6 = true;
@@ -54,9 +64,11 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	make_log_full(log_verbose);
+
 	if (!enable_ipv4 && !enable_ipv6) {
-		enable_ipv4 = enable_ipv6 = true;
-		std::cout << "By default, IPV4 and IPV6 are enabled. Use -ipv4 and/or -ipv6 to be explicit on what to enable (or both).\n";
+		enable_ipv4 = true;
+		std::cout << "By default, IPV4 is being used. Use -ipv4 and/or -ipv6 to be explicit on what to enable (or both).\n";
 	}
 
 	X509* xxx = nullptr;
@@ -143,11 +155,11 @@ std::future<bool> setup(httplib::Server* svr, const int port_used, const bool ip
 		return make_sync_future(false);
 	}
 
-	if (!svr->set_mount_point("/", root_path_public))
-	{
-		std::cout << "Please create path /public_host to mount the server properly.\n";
-		return make_sync_future(false);
-	}
+	//if (!svr->set_mount_point("/", root_path_public))
+	//{
+	//	std::cout << "Please create path /public_host to mount the server properly.\n";
+	//	return make_sync_future(false);
+	//}
 
 	svr->set_keep_alive_max_count(10);
 	svr->set_post_routing_handler(post_routing_handler);
@@ -155,7 +167,7 @@ std::future<bool> setup(httplib::Server* svr, const int port_used, const bool ip
 	svr->set_exception_handler(exception_handler);
 	svr->set_logger(static_logger);
 	svr->set_pre_routing_handler(pre_router_handler);
-	svr->set_file_request_handler(file_request_handler);
+	svr->Get(".*", file_request_handler);
 
 	std::cout << "Hosting " << (ipv6 ? "IPV6" : "IPV4") << " @ port = " << port_used << "\n";
 

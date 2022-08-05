@@ -8,7 +8,7 @@ std::string CookieConf::get_cookie(const httplib::Request& req) const
 	size_t pos = (" " + cookies).find(std::string(" ") + name + std::string("="));
 	if (pos == std::string::npos) return std::string();
 	size_t len = pos + name.length() + 1;
-	std::string cookie = cookies.substr(len, cookies.find(";", len));
+	std::string cookie = cookies.substr(len, cookies.find(";", len) - len);
 	return cookie; // decode ..., true;
 }
 
@@ -37,14 +37,14 @@ void CookieConf::merge_into(httplib::Response& res) const
 {
 	if (name.empty() || value.empty()) return;
 	std::string cookie = name + std::string("=") + value; // already encoded url
-	if (time_del_sec != 0) cookie += "; Max-Age=" + std::to_string(time_del_sec > 0 ? time_del_sec : 0) + "";
+	if (time_del_sec != 0) cookie += "; Max-Age=" + std::to_string(time_del_sec > 0 ? time_del_sec : 0) + "; Path=/";
 	res.set_header("Set-Cookie", cookie);
 }
 
 void CookieConf::remove_from(httplib::Response& res) const
 {
 	if (name.empty() || value.empty()) return;
-	std::string cookie = name + std::string("=") + value + "; Max-Age=0";
+	std::string cookie = name + std::string("=") + value + "; Max-Age=0; Path=/";
 	res.set_header("Set-Cookie", cookie);
 }
 
@@ -129,6 +129,12 @@ bool find_and_replace_all(std::string& body)
 		{
 			MAKEDAY(false);
 			replace = std::to_string(tm.tm_isdst);
+		}
+			break;
+		case 10: //"%compiled_date%"
+		{
+			MAKEDAY(false);
+			replace = CURRDATE;
 		}
 			break;
 		default:
@@ -272,4 +278,21 @@ int mkcert(X509** x509p, EVP_PKEY** pkeyp, int bits, int serial, int days)
 	return(1);
 err:
 	return(0);
+}
+
+bool __log_full(bool* b)
+{
+	static bool persis = false;
+	if (b) persis = *b;
+	return persis;
+}
+
+bool make_log_full(bool o)
+{
+	return __log_full(&o);
+}
+
+bool log_full()
+{
+	return __log_full();
 }
