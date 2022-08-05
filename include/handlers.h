@@ -28,4 +28,4 @@ void file_request_handler(const httplib::Request& req, httplib::Response& res);
 httplib::Server::HandlerResponse pre_router_handler(const httplib::Request& req, httplib::Response& res);
 void exception_handler(const httplib::Request& req, httplib::Response& res, std::exception_ptr ep);
 void error_handler(const httplib::Request& req, httplib::Response& res);
-void post_routing_handler(const httplib::Request& req, httplib::Response& res);
+//void post_routing_handler(const httplib::Request& req, httplib::Response& res);

@@ -162,7 +162,7 @@ std::future<bool> setup(httplib::Server* svr, const int port_used, const bool ip
 	//}
 
 	svr->set_keep_alive_max_count(10);
-	svr->set_post_routing_handler(post_routing_handler);
+	//svr->set_post_routing_handler(post_routing_handler);
 	svr->set_error_handler(error_handler);
 	svr->set_exception_handler(exception_handler);
 	svr->set_logger(static_logger);

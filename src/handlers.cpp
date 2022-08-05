@@ -26,6 +26,7 @@ void file_request_handler(const httplib::Request& req, httplib::Response& res) {
 	const auto send_file = [&filepath, &req, &res]() {
 		const auto type = httplib::detail::find_content_type(filepath, {});
 		std::string buf;
+		const std::string typestr = type ? type : "";
 
 		if (!type) {
 			res.status = 404;
@@ -43,7 +44,9 @@ void file_request_handler(const httplib::Request& req, httplib::Response& res) {
 			return false;
 		}
 
-		res.set_content_provider(datasiz, type,
+		if (typestr.find("text") == 0) find_and_replace_all(buf);
+
+		res.set_content_provider(datasiz, typestr,
 			[
 				ipref = req.remote_addr + ":" + std::to_string(req.remote_port), 
 				abuf = std::move(buf),
@@ -192,6 +195,6 @@ void error_handler(const httplib::Request& req, httplib::Response& res) {
 	}
 }
 
-void post_routing_handler(const httplib::Request& req, httplib::Response& res) {
+/*void post_routing_handler(const httplib::Request& req, httplib::Response& res) {
 	find_and_replace_all(res.body);
-}
+}*/
